@@ -1,4 +1,5 @@
-name: Build REZA HOKM APK
+
+name: Build REZA HOKM 3D APK
 
 on:
   workflow_dispatch:
@@ -9,38 +10,48 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
+      - name: Download project
         uses: actions/checkout@v4
 
-      - name: Extract Android project
+      - name: Check Android SDK
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME"
+
+      - name: Extract project
+        run: |
+          mkdir -p project
           unzip -o REZA_HOKM.zip -d project
           find project -name settings.gradle -o -name settings.gradle.kts
 
-      - name: Find project folder
+      - name: Locate Gradle project
         run: |
           PROJECT_DIR=$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -exec dirname {} \; | head -n 1)
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Gradle project not found"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Build APK
-        run: |
-          cd "$PROJECT_DIR"
-          gradle assembleDebug --no-daemon
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: '8.7'
+          arguments: assembleDebug --no-daemon
+          build-root-directory: ${{ env.PROJECT_DIR }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: REZA-HOKM-APK
+          name: REZA-HOKM-3D-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
