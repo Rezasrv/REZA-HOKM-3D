@@ -1,5 +1,5 @@
 
-name: Build REZA HOKM 3D APK
+name: Build REZA HOKM 3D Release APK
 
 on:
   workflow_dispatch:
@@ -16,16 +16,10 @@ jobs:
       - name: Download project
         uses: actions/checkout@v4
 
-      - name: Check Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME"
-
       - name: Extract project
         run: |
           mkdir -p project
           unzip -o REZA_HOKM.zip -d project
-          find project -name settings.gradle -o -name settings.gradle.kts
 
       - name: Locate Gradle project
         run: |
@@ -42,16 +36,70 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build APK
+      - name: Prepare release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Missing keystore secret"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/reza-release.jks"
+          test -s "$RUNNER_TEMP/reza-release.jks"
+
+      - name: Configure release signing
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cat > "$PROJECT_DIR/app/build.gradle" <<'EOF'
+          plugins { id 'com.android.application' }
+
+          android {
+              namespace 'com.rezahokm3d.game'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.rezahokm3d.game'
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 22
+                  versionName '3.0.1'
+              }
+
+              signingConfigs {
+                  release {
+                      storeFile file(System.getenv("RUNNER_TEMP") + "/reza-release.jks")
+                      storePassword System.getenv("STORE_PASSWORD")
+                      keyAlias System.getenv("KEY_ALIAS")
+                      keyPassword System.getenv("KEY_PASSWORD")
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                  }
+              }
+          }
+          EOF
+
+      - name: Build signed Release APK
         uses: gradle/gradle-build-action@v3
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         with:
           gradle-version: '8.7'
-          arguments: assembleDebug --no-daemon
+          arguments: assembleRelease --no-daemon
           build-root-directory: ${{ env.PROJECT_DIR }}
 
-      - name: Upload APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: REZA-HOKM-3D-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: REZA-HOKM-3D-RELEASE
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
